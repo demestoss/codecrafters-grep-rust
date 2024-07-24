@@ -9,6 +9,9 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
         input_line.contains(|c: char| c.is_digit(10))
     } else if pattern == r"\w" {
         input_line.contains(|c: char| c.is_alphanumeric())
+    } else if pattern.starts_with("[") && pattern.ends_with("]") {
+        let pattern = pattern.trim_matches(&['[', ']']);
+        input_line.contains(|c: char| pattern.contains(c))
     } else {
         panic!("Unhandled pattern: {}", pattern)
     }
