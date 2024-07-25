@@ -120,3 +120,72 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    fn test_match(input: &str, pattern: &str, expected: bool) {
+        let res = match_pattern(input, pattern).unwrap();
+        assert_eq!(res, expected, "input: {}, pattern: {}", input, pattern);
+    }
+
+    #[test]
+    fn literal_pattern() {
+        test_match("abc", "abc", true);
+        test_match("abcd", "abc", true);
+        test_match("ab", "abc", false);
+        test_match("abce", "abc", true);
+        test_match("uvwxyzabde", "abc", false);
+    }
+
+    #[test]
+    fn digit_pattern() {
+        test_match("1", r"\d", true);
+        test_match("123", r"\d", true);
+        test_match("a", r"\d", false);
+        test_match(" ", r"\d", false);
+        test_match("apple", r"\d", false);
+    }
+
+    #[test]
+    fn alphanumeric_pattern() {
+        test_match("x apple", r"\w", true);
+        test_match("$!?", r"\w", false);
+    }
+
+    #[test]
+    fn group_pattern() {
+        test_match("x apple", "[abc]", true);
+        test_match("x apple", "[^abc]", true);
+        test_match("1 apple", r"\d apple", true);
+        test_match("x apple", r"\d apple", false);
+    }
+
+    #[test]
+    fn combinations_pattern() {
+        test_match("sally has 124 apples", r"\d\d\d apples", true);
+        test_match("sally has 12 apples", r"\d\d\d apples", false);
+        test_match("sally has 3 dogs", r"\d \w\w\ws", true);
+        test_match("sally has 4 dogs", r"\d \w\w\ws", true);
+        test_match("sally has 1 dog", r"\d \w\w\ws", false);
+    }
+
+    #[test]
+    fn start_of_string_pattern() {
+        test_match("abc", "^abc", true);
+        test_match("abcd", "^abc", true);
+        test_match("ab", "^abc", false);
+        test_match("abce", "^abc", true);
+        test_match("aabc", "^abc", false);
+    }
+
+    #[test]
+    fn end_of_string_pattern() {
+        test_match("abc", "abc$", true);
+        test_match("abcd", "abc$", false);
+        test_match("ab", "abc$", false);
+        test_match("abce", "abc$", false);
+        test_match("aabc", "abc$", true);
+        test_match("aabc", "abc$", true);
+    }
+}
