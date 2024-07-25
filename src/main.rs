@@ -1,3 +1,6 @@
+mod pattern;
+
+use crate::pattern::{Modifier, Pattern, PatternItem, Token};
 use anyhow::bail;
 use std::env;
 use std::io;
@@ -6,14 +9,15 @@ use std::str::Bytes;
 
 fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
     let mut input = input.bytes();
-    let pattern = pattern.as_bytes();
+    let mut pattern = Pattern::parse(pattern)?;
 
-    if pattern[0] == b'^' {
-        return match_here(&mut input, &pattern[1..]);
+    if pattern.is_next_token(Token::StartLine) {
+        pattern.next();
+        return match_here(&mut input, &mut pattern);
     }
 
     loop {
-        if match_here(&mut input.clone(), pattern)? {
+        if match_here(&mut input.clone(), &mut pattern.clone())? {
             return Ok(true);
         }
         if input.next().is_none() {
@@ -22,92 +26,52 @@ fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
     }
 }
 
-fn match_here(input: &mut Bytes, pattern: &[u8]) -> anyhow::Result<bool> {
-    if pattern.is_empty() {
-        return Ok(true);
-    };
-    if is_end_line_pattern(&pattern) && input.len() == 0 {
+fn match_here(input: &mut Bytes, pattern: &mut Pattern) -> anyhow::Result<bool> {
+    if pattern.is_next_optional() && input.len() == 0 {
         return Ok(true);
     }
+    if pattern.is_next_token(Token::EndLine) && input.len() == 0 {
+        return Ok(true);
+    }
+    let Some(pattern_item) = pattern.next() else {
+        return Ok(true);
+    };
 
     let Some(input_ch) = input.next() else {
         return Ok(false);
     };
-    let pattern_ch = pattern[0];
 
-    let (is_char_matches, skip_index) = if pattern_ch == b'\\' {
-        (match_char_type(&input_ch, &pattern[1..]), 2)
-    } else if pattern_ch == b'[' {
-        match_char_group(&input_ch, &pattern[1..])?
-    } else if is_next_char_plus(&pattern) {
-        (match_one_or_more(input, &input_ch, &pattern_ch), 2)
-    } else {
-        (match_char(&input_ch, &pattern_ch), 1)
+    let PatternItem::Token(token) = pattern_item else {
+        bail!("unexpected modifier found")
     };
+    let token = token.clone();
+    let mut is_token_matches = token.match_char(&input_ch);
 
-    if is_char_matches {
-        match_here(input, &pattern[skip_index..])
+    if pattern.is_next_modifier(Modifier::OneOrMore) {
+        pattern.next();
+        if is_token_matches {
+            match_one_or_more(input, &token);
+        }
+    }
+    if pattern.is_next_modifier(Modifier::Optional) {
+        pattern.next();
+    }
+
+    if is_token_matches {
+        match_here(input, pattern)
     } else {
         Ok(false)
     }
 }
 
-fn is_end_line_pattern(pattern: &[u8]) -> bool {
-    pattern.len() == 1 && pattern[0] == b'$'
-}
-
-fn is_next_char_plus(pattern: &[u8]) -> bool {
-    matches!(pattern.get(1), Some(b'+'))
-}
-
-fn match_one_or_more(input: &mut Bytes, input_ch: &u8, pattern_ch: &u8) -> bool {
-    if !match_char(&input_ch, &pattern_ch) {
-        return false;
-    }
+fn match_one_or_more(input: &mut Bytes, token: &Token) {
     let skip_chars_count = input
         .clone()
-        .take_while(|&input_ch| match_char(&input_ch, pattern_ch))
+        .take_while(|&input_ch| token.match_char(&input_ch))
         .count();
     for _ in 0..skip_chars_count {
         input.next();
     }
-    true
-}
-
-fn match_char_type(input_ch: &u8, pattern: &[u8]) -> bool {
-    if pattern.is_empty() {
-        return false;
-    }
-    match pattern[0] {
-        b'd' => input_ch.is_ascii_digit(),
-        b'w' => input_ch.is_ascii_alphanumeric(),
-        _ => false,
-    }
-}
-
-fn match_char_group(input_ch: &u8, pattern: &[u8]) -> anyhow::Result<(bool, usize)> {
-    let Some((end_index, _)) = pattern.iter().enumerate().find(|&(_index, i)| *i == b']') else {
-        bail!("incorrect group pattern: no closing brace")
-    };
-
-    let group = &pattern[..end_index];
-    if group.is_empty() {
-        bail!("incorrect group pattern: empty group")
-    }
-
-    let matches = match_group_char(&input_ch, &group);
-    Ok((matches, end_index + 2))
-}
-
-fn match_group_char(input_ch: &u8, group: &[u8]) -> bool {
-    match group[0] {
-        b'^' => !group.contains(input_ch),
-        _ => group.contains(input_ch),
-    }
-}
-
-fn match_char(input_ch: &u8, pattern_ch: &u8) -> bool {
-    input_ch == pattern_ch
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
@@ -215,5 +179,15 @@ mod test {
         test_match("apple", "a+", true);
         test_match("SaaS", "a+", true);
         test_match("dog", "a+", false);
+    }
+
+    #[test]
+    fn optional_pattern() {
+        test_match("dogs", "dogs?", true);
+        test_match("dog", "dogs?", true);
+        test_match("cat", "dogs?", false);
+        test_match("dog", "do?g", true);
+        test_match("dag", "do?g", false);
+        test_match("ac", "ab?c", true);
     }
 }
