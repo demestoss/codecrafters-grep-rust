@@ -6,9 +6,14 @@ use std::str::Bytes;
 
 fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
     let mut input = input.bytes();
+    let pattern = pattern.as_bytes();
+
+    if pattern[0] == b'^' {
+        return match_here(&mut input, &pattern[1..]);
+    }
 
     loop {
-        if match_here(&mut input.clone(), pattern.as_bytes())? {
+        if match_here(&mut input.clone(), pattern)? {
             return Ok(true);
         }
         if input.next().is_none() {
@@ -17,7 +22,7 @@ fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
     }
 }
 
-fn match_here(input: &mut Bytes, mut pattern: &[u8]) -> anyhow::Result<bool> {
+fn match_here(input: &mut Bytes, pattern: &[u8]) -> anyhow::Result<bool> {
     if pattern.is_empty() {
         return Ok(true);
     };
