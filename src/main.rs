@@ -26,20 +26,21 @@ fn match_here(input: &mut Bytes, pattern: &[u8]) -> anyhow::Result<bool> {
     if pattern.is_empty() {
         return Ok(true);
     };
+    if is_end_line_pattern(&pattern) && input.len() == 0 {
+        return Ok(true);
+    }
 
     let Some(input_ch) = input.next() else {
-        if is_end_line_pattern(&pattern) {
-            return Ok(true);
-        }
         return Ok(false);
     };
-
     let pattern_ch = pattern[0];
 
     let (is_char_matches, skip_index) = if pattern_ch == b'\\' {
         (match_char_type(&input_ch, &pattern[1..]), 2)
     } else if pattern_ch == b'[' {
         match_char_group(&input_ch, &pattern[1..])?
+    } else if is_next_char_plus(&pattern) {
+        (match_one_or_more(input, &input_ch, &pattern_ch), 2)
     } else {
         (match_char(&input_ch, &pattern_ch), 1)
     };
@@ -53,6 +54,24 @@ fn match_here(input: &mut Bytes, pattern: &[u8]) -> anyhow::Result<bool> {
 
 fn is_end_line_pattern(pattern: &[u8]) -> bool {
     pattern.len() == 1 && pattern[0] == b'$'
+}
+
+fn is_next_char_plus(pattern: &[u8]) -> bool {
+    matches!(pattern.get(1), Some(b'+'))
+}
+
+fn match_one_or_more(input: &mut Bytes, input_ch: &u8, pattern_ch: &u8) -> bool {
+    if !match_char(&input_ch, &pattern_ch) {
+        return false;
+    }
+    let skip_chars_count = input
+        .clone()
+        .take_while(|&input_ch| match_char(&input_ch, pattern_ch))
+        .count();
+    for _ in 0..skip_chars_count {
+        input.next();
+    }
+    true
 }
 
 fn match_char_type(input_ch: &u8, pattern: &[u8]) -> bool {
@@ -187,5 +206,14 @@ mod test {
         test_match("abce", "abc$", false);
         test_match("aabc", "abc$", true);
         test_match("aabc", "abc$", true);
+    }
+
+    #[test]
+    fn one_or_more_pattern() {
+        test_match("aaaaaa", "a+", true);
+        test_match("caaaats", "ca+t", true);
+        test_match("apple", "a+", true);
+        test_match("SaaS", "a+", true);
+        test_match("dog", "a+", false);
     }
 }
