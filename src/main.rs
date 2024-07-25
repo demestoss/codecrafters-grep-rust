@@ -28,6 +28,9 @@ fn match_here(input: &mut Bytes, pattern: &[u8]) -> anyhow::Result<bool> {
     };
 
     let Some(input_ch) = input.next() else {
+        if is_end_line_pattern(&pattern) {
+            return Ok(true);
+        }
         return Ok(false);
     };
 
@@ -46,6 +49,10 @@ fn match_here(input: &mut Bytes, pattern: &[u8]) -> anyhow::Result<bool> {
     } else {
         Ok(false)
     }
+}
+
+fn is_end_line_pattern(pattern: &[u8]) -> bool {
+    pattern.len() == 1 && pattern[0] == b'$'
 }
 
 fn match_char_type(input_ch: &u8, pattern: &[u8]) -> bool {
