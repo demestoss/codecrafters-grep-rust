@@ -1,79 +1,83 @@
+use anyhow::bail;
 use std::env;
 use std::io;
 use std::process;
-use std::str::Chars;
+use std::str::Bytes;
 
-fn match_pattern(mut input: &str, pattern: &str) -> bool {
-    let mut input = input.chars();
-    let pattern = pattern.chars();
+fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
+    let mut input = input.bytes();
 
-    while input.next().is_some() {
-        if match_here(&mut input.clone(), &mut pattern.clone()) {
-            return true;
+    loop {
+        if match_here(&mut input.clone(), pattern.as_bytes())? {
+            return Ok(true);
+        }
+        if input.next().is_none() {
+            return Ok(false);
         }
     }
-    false
 }
 
-fn match_here(input: &mut Chars, pattern: &mut Chars) -> bool {
-    let Some(pattern_ch) = pattern.next() else {
-        return true;
+fn match_here(input: &mut Bytes, mut pattern: &[u8]) -> anyhow::Result<bool> {
+    if pattern.is_empty() {
+        return Ok(true);
     };
 
     let Some(input_ch) = input.next() else {
-        return false;
+        return Ok(false);
     };
 
-    let is_char_matches = if pattern_ch == '\\' {
-        match_char_type(&input_ch, pattern)
-    } else if pattern_ch == '[' {
-        match_char_group(&input_ch, pattern)
+    let pattern_ch = pattern[0];
+
+    let (is_char_matches, skip_index) = if pattern_ch == b'\\' {
+        (match_char_type(&input_ch, &pattern[1..]), 2)
+    } else if pattern_ch == b'[' {
+        match_char_group(&input_ch, &pattern[1..])?
     } else {
-        match_char(&input_ch, &pattern_ch)
+        (match_char(&input_ch, &pattern_ch), 1)
     };
 
-    println!("{input:?} {is_char_matches} {pattern:?}");
-
-    is_char_matches && match_here(input, pattern)
+    if is_char_matches {
+        match_here(input, &pattern[skip_index..])
+    } else {
+        Ok(false)
+    }
 }
 
-fn match_char_type(input_ch: &char, pattern: &mut Chars) -> bool {
-    let Some(pattern_ch) = pattern.next() else {
+fn match_char_type(input_ch: &u8, pattern: &[u8]) -> bool {
+    if pattern.is_empty() {
         return false;
-    };
-    match pattern_ch {
-        'd' => input_ch.is_digit(10),
-        'w' => input_ch.is_alphanumeric(),
+    }
+    match pattern[0] {
+        b'd' => input_ch.is_ascii_digit(),
+        b'w' => input_ch.is_ascii_alphanumeric(),
         _ => false,
     }
 }
 
-fn match_char_group(input_ch: &char, pattern: &mut Chars) -> bool {
-    todo!()
+fn match_char_group(input_ch: &u8, pattern: &[u8]) -> anyhow::Result<(bool, usize)> {
+    let Some((end_index, _)) = pattern.iter().enumerate().find(|&(_index, i)| *i == b']') else {
+        bail!("incorrect group pattern: no closing brace")
+    };
+
+    let group = &pattern[..end_index];
+    if group.is_empty() {
+        bail!("incorrect group pattern: empty group")
+    }
+
+    let matches = match_group_char(&input_ch, &group);
+    Ok((matches, end_index + 2))
 }
 
-fn match_char(input_ch: &char, pattern_ch: &char) -> bool {
+fn match_group_char(input_ch: &u8, group: &[u8]) -> bool {
+    match group[0] {
+        b'^' => !group.contains(input_ch),
+        _ => group.contains(input_ch),
+    }
+}
+
+fn match_char(input_ch: &u8, pattern_ch: &u8) -> bool {
     input_ch == pattern_ch
 }
-
-// fn match_here(input_line: &str, pattern: &str) -> bool {
-//     if pattern.chars().count() == 1 {
-//         input_line.contains(pattern)
-//     } else if pattern == r"\d" {
-//         input_line.contains(|c: char| c.is_digit(10))
-//     } else if pattern == r"\w" {
-//         input_line.contains(|c: char| c.is_alphanumeric())
-//     } else if pattern.starts_with("[^") && pattern.ends_with("]") {
-//         let pattern = pattern.trim_matches(&['[', ']']);
-//         let pattern = &pattern[1..];
-//         input_line.contains(|c: char| !pattern.contains(c))
-//     } else if pattern.starts_with("[") && pattern.ends_with("]") {
-//         let pattern = pattern.trim_matches(&['[', ']']);
-//         input_line.contains(|c: char| pattern.contains(c))
-//     } else {
-//         panic!("Unhandled pattern: {}", pattern)
-//     }
-// }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
 fn main() {
@@ -87,9 +91,20 @@ fn main() {
 
     io::stdin().read_line(&mut input_line).unwrap();
 
-    if match_pattern(&input_line, &pattern) {
-        process::exit(0)
-    } else {
-        process::exit(1)
+    let input_line = input_line.trim_end();
+    let res = match_pattern(&input_line, &pattern);
+
+    match res {
+        Ok(res) => {
+            if res {
+                process::exit(0)
+            } else {
+                process::exit(1)
+            }
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1)
+        }
     }
 }
