@@ -1,23 +1,22 @@
 mod pattern;
 
-use crate::pattern::{Modifier, Pattern, PatternItem, Token};
-use anyhow::bail;
+use crate::pattern::{Pattern, Token};
 use std::env;
 use std::io;
 use std::process;
-use std::str::Bytes;
+use std::str::{Bytes, FromStr};
 
 fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
     let mut input = input.bytes();
-    let mut pattern = Pattern::parse(pattern)?;
+    let mut pattern = Pattern::from_str(pattern)?;
 
     if pattern.is_next_token(Token::StartLine) {
         pattern.next();
-        return match_here(&mut input, &mut pattern);
+        return Ok(match_here(&mut input, &mut pattern));
     }
 
     loop {
-        if match_here(&mut input.clone(), &mut pattern.clone())? {
+        if match_here(&mut input.clone(), &mut pattern.clone()) {
             return Ok(true);
         }
         if input.next().is_none() {
@@ -26,55 +25,29 @@ fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
     }
 }
 
-fn match_here(input: &mut Bytes, pattern: &mut Pattern) -> anyhow::Result<bool> {
+fn match_here(input: &mut Bytes, pattern: &mut Pattern) -> bool {
     if pattern.is_next_optional() && input.len() == 0 {
-        return Ok(true);
+        return true;
     }
     if pattern.is_next_token(Token::EndLine) && input.len() == 0 {
-        return Ok(true);
+        return true;
     }
     let Some(pattern_item) = pattern.next() else {
-        return Ok(true);
+        return true;
     };
 
-    let Some(input_ch) = input.next() else {
-        return Ok(false);
+    let match_option = pattern_item.match_input(&mut input.clone());
+
+    let Some(skip_count) = match_option else {
+        return false;
     };
 
-    let PatternItem::Token(token) = pattern_item else {
-        bail!("unexpected modifier found")
-    };
-    let token = token.clone();
-    let mut is_token_matches = token.match_char(&input_ch);
-
-    if pattern.is_next_modifier(Modifier::OneOrMore) {
-        pattern.next();
-        if is_token_matches {
-            match_one_or_more(input, &token);
-        }
-    }
-    if pattern.is_next_modifier(Modifier::Optional) {
-        pattern.next();
-    }
-
-    if is_token_matches {
-        match_here(input, pattern)
-    } else {
-        Ok(false)
-    }
-}
-
-fn match_one_or_more(input: &mut Bytes, token: &Token) {
-    let skip_chars_count = input
-        .clone()
-        .take_while(|&input_ch| token.match_char(&input_ch))
-        .count();
-    for _ in 0..skip_chars_count {
+    for _ in 0..skip_count {
         input.next();
     }
+    return match_here(input, pattern);
 }
 
-// Usage: echo <input_text> | your_program.sh -E <pattern>
 fn main() {
     if env::args().nth(1).unwrap() != "-E" {
         println!("Expected first argument to be '-E'");
@@ -140,6 +113,7 @@ mod test {
     fn group_pattern() {
         test_match("x apple", "[abc]", true);
         test_match("x apple", "[^abc]", true);
+        test_match("banana", "[^anb]", false);
         test_match("1 apple", r"\d apple", true);
         test_match("x apple", r"\d apple", false);
     }
