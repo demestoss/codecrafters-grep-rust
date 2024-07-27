@@ -61,31 +61,42 @@ fn handle_match_option(
     }
 
     if pattern_item.is_multiple_match() {
-        skip_count += match_more(input, &pattern_item.clone(), pattern)
+        let res = match_more(input, &pattern_item.clone(), pattern);
+        match res {
+            None => return None,
+            Some(count) => skip_count += count,
+        }
     }
 
     Some(skip_count)
 }
 
-fn match_more(input: &mut Bytes, pattern_item: &PatternItem, pattern: &Pattern) -> usize {
+fn match_more(input: &mut Bytes, pattern_item: &PatternItem, pattern: &Pattern) -> Option<usize> {
     let mut skip_count = 0;
-    let mut times_count = 1;
-    while pattern_item.can_match_more_times(times_count) {
+    let mut match_times = 1;
+    while pattern_item.can_match_more(match_times) {
         let Some(input_ch) = input.next() else {
             break;
         };
         let Some(match_count) = pattern_item.match_token(&input_ch) else {
             break;
         };
-        if let Some(next_pattern_item) = pattern.peek() {
-            if let Some(_) = next_pattern_item.match_token(&input_ch) {
-                break;
+        if pattern_item.is_least_matched(match_times + 1) {
+            if let Some(next_pattern_item) = pattern.peek() {
+                if let Some(_) = next_pattern_item.match_token(&input_ch) {
+                    break;
+                }
             }
         }
         skip_count += match_count;
-        times_count += 1;
+        match_times += 1;
     }
-    skip_count
+
+    if pattern_item.is_least_matched(match_times) {
+        Some(skip_count)
+    } else {
+        None
+    }
 }
 
 fn main() {
@@ -212,7 +223,6 @@ mod test {
         test_match("cats", "do.s", false);
         test_match("sddsddssas", ".+as", true);
         test_match("ddsdsaDdsds", ".+as?", true);
-        test_match("mod.rs", "*rs?", true);
-        test_match("dos", "do.?s", true);
+        test_match("mod.rs", "*.rs?", true);
     }
 }

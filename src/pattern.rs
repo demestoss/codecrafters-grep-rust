@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail};
 use std::cmp::PartialEq;
 use std::ops::Index;
-use std::str::{Bytes, FromStr};
+use std::str::FromStr;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum CharType {
@@ -79,22 +79,18 @@ impl PatternItem {
         Some(1)
     }
 
-    pub fn can_match_more_times(&self, current_times: usize) -> bool {
-        self.check_more_than(current_times + 1) && self.check_less_than(current_times + 1)
-    }
-
     pub fn is_multiple_match(&self) -> bool {
         self.more_than.is_some() || self.less_than.is_some()
     }
 
-    fn check_more_than(&self, skip_chars: usize) -> bool {
+    pub fn is_least_matched(&self, current_times: usize) -> bool {
         let more_than = self.more_than.unwrap_or(1);
-        skip_chars >= more_than
+        current_times >= more_than
     }
 
-    fn check_less_than(&self, skip_chars: usize) -> bool {
+    pub fn can_match_more(&self, current_times: usize) -> bool {
         if let Some(less_than) = self.less_than {
-            skip_chars <= less_than
+            current_times + 1 <= less_than
         } else {
             true
         }
@@ -141,7 +137,7 @@ impl FromStr for Pattern {
         let mut inner: Vec<PatternItem> = Vec::new();
 
         let length = pattern.len();
-        let mut pattern = pattern.bytes().into_iter().enumerate();
+        let mut pattern = pattern.bytes().into_iter().enumerate().peekable();
 
         while let Some((i, char)) = pattern.next() {
             if char == b'?' {
@@ -163,7 +159,14 @@ impl FromStr for Pattern {
             } else if char == b'*' {
                 let mut item = PatternItem::new(Token::Wildcard);
                 item.apply_modifier(TokenModifier::OneOrMore);
-                inner.push(item)
+                inner.push(item);
+                match pattern.peek() {
+                    Some((_, b'.')) => {
+                        inner.push(PatternItem::new(Token::CharExact(b'.')));
+                        pattern.next();
+                    }
+                    _ => (),
+                }
             } else if char == b'\\' {
                 let (_, next_char) = pattern.next().ok_or(anyhow!(
                     "incorrect pattern: \\ symbol without value after it"
