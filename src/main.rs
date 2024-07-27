@@ -1,6 +1,6 @@
 mod pattern;
 
-use crate::pattern::{Pattern, Token};
+use crate::pattern::{Pattern, PatternItem, Token};
 use std::env;
 use std::io;
 use std::process;
@@ -36,9 +36,8 @@ fn match_here(input: &mut Bytes, pattern: &mut Pattern) -> bool {
         return true;
     };
 
-    let match_option = pattern_item.match_input(&mut input.clone());
-
-    let Some(skip_count) = match_option else {
+    let Some(skip_count) = handle_match_option(&pattern_item.clone(), &mut input.clone(), pattern)
+    else {
         return false;
     };
 
@@ -46,6 +45,47 @@ fn match_here(input: &mut Bytes, pattern: &mut Pattern) -> bool {
         input.next();
     }
     return match_here(input, pattern);
+}
+
+fn handle_match_option(
+    pattern_item: &PatternItem,
+    input: &mut Bytes,
+    pattern: &Pattern,
+) -> Option<usize> {
+    let match_option = pattern_item.match_token(&input.next()?);
+    let Some(mut skip_count) = match_option else {
+        return None;
+    };
+    if skip_count == 0 {
+        return Some(0);
+    }
+
+    if pattern_item.is_multiple_match() {
+        skip_count += match_more(input, &pattern_item.clone(), pattern)
+    }
+
+    Some(skip_count)
+}
+
+fn match_more(input: &mut Bytes, pattern_item: &PatternItem, pattern: &Pattern) -> usize {
+    let mut skip_count = 0;
+    let mut times_count = 1;
+    while pattern_item.can_match_more_times(times_count) {
+        let Some(input_ch) = input.next() else {
+            break;
+        };
+        let Some(match_count) = pattern_item.match_token(&input_ch) else {
+            break;
+        };
+        if let Some(next_pattern_item) = pattern.peek() {
+            if let Some(_) = next_pattern_item.match_token(&input_ch) {
+                break;
+            }
+        }
+        skip_count += match_count;
+        times_count += 1;
+    }
+    skip_count
 }
 
 fn main() {
@@ -163,5 +203,16 @@ mod test {
         test_match("dog", "do?g", true);
         test_match("dag", "do?g", false);
         test_match("ac", "ab?c", true);
+    }
+
+    #[test]
+    fn wildcard_pattern() {
+        test_match("dogs", "do.s", true);
+        test_match("doqs", "do.?s", true);
+        test_match("cats", "do.s", false);
+        test_match("sddsddssas", ".+as", true);
+        test_match("ddsdsaDdsds", ".+as?", true);
+        test_match("mod.rs", "*rs?", true);
+        test_match("dos", "do.?s", true);
     }
 }

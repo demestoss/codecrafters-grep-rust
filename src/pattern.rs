@@ -21,6 +21,7 @@ impl CharType {
 #[derive(PartialEq, Clone, Debug)]
 pub enum Token {
     CharExact(u8),
+    Wildcard,
     Group(Vec<u8>),
     NegativeGroup(Vec<u8>),
     CharType(CharType),
@@ -35,6 +36,7 @@ impl Token {
             Token::CharType(char_type) => char_type.match_char(&input_ch),
             Token::Group(group) => group.contains(input_ch),
             Token::NegativeGroup(group) => !group.contains(input_ch),
+            Token::Wildcard => true,
             _ => false,
         }
     }
@@ -70,31 +72,19 @@ impl PatternItem {
         }
     }
 
-    pub fn match_input(&self, input: &mut Bytes) -> Option<usize> {
-        let Some(input_ch) = input.next() else {
-            return None;
-        };
+    pub fn match_token(&self, input_ch: &u8) -> Option<usize> {
         if !self.token.match_char(&input_ch) {
             return if self.optional { Some(0) } else { None };
         }
-
-        if self.more_than.is_none() && self.less_than.is_none() {
-            return Some(1);
-        }
-
-        let skip_chars = self.match_more(input) + 1;
-
-        if !self.check_more_than(skip_chars) || !self.check_less_than(skip_chars) {
-            return None;
-        }
-
-        Some(skip_chars)
+        Some(1)
     }
 
-    fn match_more(&self, input: &mut Bytes) -> usize {
-        input
-            .take_while(|&input_ch| self.token.match_char(&input_ch))
-            .count()
+    pub fn can_match_more_times(&self, current_times: usize) -> bool {
+        self.check_more_than(current_times + 1) && self.check_less_than(current_times + 1)
+    }
+
+    pub fn is_multiple_match(&self) -> bool {
+        self.more_than.is_some() || self.less_than.is_some()
     }
 
     fn check_more_than(&self, skip_chars: usize) -> bool {
@@ -138,6 +128,10 @@ impl Pattern {
         self.cursor += 1;
         val
     }
+
+    pub fn peek(&self) -> Option<&PatternItem> {
+        self.inner.get(self.cursor)
+    }
 }
 
 impl FromStr for Pattern {
@@ -164,6 +158,12 @@ impl FromStr for Pattern {
                 inner.push(PatternItem::new(Token::StartLine))
             } else if char == b'$' && i == length - 1 {
                 inner.push(PatternItem::new(Token::EndLine))
+            } else if char == b'.' {
+                inner.push(PatternItem::new(Token::Wildcard))
+            } else if char == b'*' {
+                let mut item = PatternItem::new(Token::Wildcard);
+                item.apply_modifier(TokenModifier::OneOrMore);
+                inner.push(item)
             } else if char == b'\\' {
                 let (_, next_char) = pattern.next().ok_or(anyhow!(
                     "incorrect pattern: \\ symbol without value after it"
