@@ -1,6 +1,6 @@
 mod pattern;
 
-use crate::pattern::{Pattern, PatternItem, Token};
+use crate::pattern::{CharToken, Pattern, PatternItem};
 use std::env;
 use std::io;
 use std::process;
@@ -10,7 +10,7 @@ fn match_pattern(input: &str, pattern: &str) -> anyhow::Result<bool> {
     let mut input = input.bytes();
     let mut pattern = Pattern::from_str(pattern)?;
 
-    if pattern.is_next_token(Token::StartLine) {
+    if pattern.is_next_token(CharToken::StartLine) {
         pattern.next();
         return Ok(match_here(&mut input, &mut pattern));
     }
@@ -29,7 +29,7 @@ fn match_here(input: &mut Bytes, pattern: &mut Pattern) -> bool {
     if pattern.is_next_optional() && input.len() == 0 {
         return true;
     }
-    if pattern.is_next_token(Token::EndLine) && input.len() == 0 {
+    if pattern.is_next_token(CharToken::EndLine) && input.len() == 0 {
         return true;
     }
     let Some(pattern_item) = pattern.next() else {
@@ -52,7 +52,7 @@ fn handle_match_option(
     input: &mut Bytes,
     pattern: &Pattern,
 ) -> Option<usize> {
-    let match_option = pattern_item.match_token(&input.next()?);
+    let match_option = pattern_item.match_input(input);
     let Some(mut skip_count) = match_option else {
         return None;
     };
@@ -75,21 +75,22 @@ fn match_more(input: &mut Bytes, pattern_item: &PatternItem, pattern: &Pattern) 
     let mut skip_count = 0;
     let mut match_times = 1;
     while pattern_item.can_match_more(match_times) {
-        let Some(input_ch) = input.next() else {
+        if input.len() == 0 {
             break;
         };
-        let Some(match_count) = pattern_item.match_token(&input_ch) else {
+        let Some(match_count) = pattern_item.match_input(input) else {
             break;
         };
+        skip_count += match_count;
+        match_times += 1;
+
         if pattern_item.is_least_matched(match_times + 1) {
             if let Some(next_pattern_item) = pattern.peek() {
-                if let Some(_) = next_pattern_item.match_token(&input_ch) {
+                if let Some(_) = next_pattern_item.match_input(&mut input.clone()) {
                     break;
                 }
             }
         }
-        skip_count += match_count;
-        match_times += 1;
     }
 
     if pattern_item.is_least_matched(match_times) {
@@ -223,6 +224,41 @@ mod test {
         test_match("cats", "do.s", false);
         test_match("sddsddssas", ".+as", true);
         test_match("ddsdsaDdsds", ".+as?", true);
-        test_match("mod.rs", "*.rs?", true);
+        test_match("mod.rs", "*.rs", true);
+    }
+
+    #[test]
+    fn alteration_pattern() {
+        test_match("dog", "(dog|cat)", true);
+        test_match("cat", "(dog|cat)", true);
+        test_match("apple", "(dog|cat)", false);
+    }
+
+    // #[test]
+    // fn exact_quantifier_pattern() {
+    //     test_match("dog", "dog{1}", true);
+    //     test_match("dogg", "dog{1}", false);
+    // }
+    //
+    // #[test]
+    // fn between_quantifier_pattern() {
+    //     test_match("dog", "dog{1,3}", true);
+    //     test_match("dogg", "dog{1,3}", true);
+    //     test_match("dogggg", "dog{1,3}", false);
+    // }
+
+    // #[test]
+    // fn at_least_quantifier_pattern() {
+    //     test_match("dog", "dog{2,}", false);
+    //     test_match("dogg", "dog{2,}", true);
+    //     test_match("doggggg", "dog{2,}", true);
+    // }
+
+    #[test]
+    fn whitespace_pattern() {
+        test_match("do     g", r"do\sg", true);
+        test_match("dog", r"do\s?g", true);
+        test_match("do\tg", r"do\sg", true);
+        test_match("do\t      g", r"do\sg", true);
     }
 }
