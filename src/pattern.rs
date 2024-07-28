@@ -1,3 +1,4 @@
+use crate::match_pattern::match_here;
 use anyhow::{anyhow, bail, Context};
 use std::cmp::PartialEq;
 use std::iter::{Enumerate, Peekable};
@@ -28,6 +29,7 @@ pub enum CharToken {
     CharType(CharType),
     StartLine,
     EndLine,
+    Whitespace,
 }
 
 impl CharToken {
@@ -38,6 +40,7 @@ impl CharToken {
             CharToken::Group(group) => group.contains(input_ch),
             CharToken::NegativeGroup(group) => !group.contains(input_ch),
             CharToken::Wildcard => true,
+            CharToken::Whitespace => input_ch.is_ascii_whitespace(),
             _ => false,
         }
     }
@@ -45,22 +48,19 @@ impl CharToken {
 
 #[derive(Clone, Debug)]
 pub enum TextToken {
-    Whitespace,
-    Alteration(Vec<Vec<u8>>),
+    Alteration(Vec<Pattern>),
 }
 
 impl TextToken {
     pub fn match_input(&self, input: &mut Bytes) -> Option<usize> {
         match self {
-            TextToken::Whitespace => match input.take_while(|c| c.is_ascii_whitespace()).count() {
-                0 => None,
-                c => Some(c),
-            },
             TextToken::Alteration(variants) => {
-                for variant in variants {
+                let input_length = input.len();
+                for mut variant in variants.clone() {
                     let mut input_clone = input.clone();
-                    if variant.iter().all(|&v| input_clone.next() == Some(v)) {
-                        return Some(variant.len());
+                    if match_here(&mut input_clone, &mut variant) {
+                        let new_input_length = input_clone.len();
+                        return Some(input_length - new_input_length);
                     }
                 }
                 None
@@ -248,15 +248,22 @@ impl FromStr for Pattern {
                     b'w' => inner.push(PatternItem::new(CharToken::CharType(
                         CharType::Alphanumeric,
                     ))),
-                    b's' => inner.push(PatternItem::new_text(TextToken::Whitespace)),
+                    b's' => {
+                        let mut item = PatternItem::new(CharToken::Whitespace);
+                        item.apply_modifier(TokenModifier::OneOrMore);
+                        inner.push(item);
+                    }
                     _ => inner.push(PatternItem::new(CharToken::Exact(next_char))),
                 }
             } else if char == b'(' {
                 let group = parse_group(&mut pattern, b')')?;
-
                 let alterations = group
                     .split(|&c| c == b'|')
-                    .map(Vec::from)
+                    .map(|v| {
+                        let str = String::from_utf8(v.to_vec())?;
+                        Pattern::from_str(&str)
+                    })
+                    .flatten()
                     .collect::<Vec<_>>();
                 inner.push(PatternItem::new_text(TextToken::Alteration(alterations)));
             } else if char == b'[' {
