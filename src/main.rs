@@ -59,12 +59,14 @@ mod test {
         test_match("a", r"\d", false);
         test_match(" ", r"\d", false);
         test_match("apple", r"\d", false);
+        test_match("apple", r"\D", true);
     }
 
     #[test]
     fn alphanumeric_pattern() {
         test_match("x apple", r"\w", true);
         test_match("$!?", r"\w", false);
+        test_match("$!?", r"\W", true);
     }
 
     #[test]
@@ -164,9 +166,9 @@ mod test {
 
     #[test]
     fn whitespace_pattern() {
-        test_match("do     g", r"do\sg", true);
+        test_match("do     g", r"do\s+g", true);
         test_match("dog", r"do\s?g", true);
         test_match("do\tg", r"do\sg", true);
-        test_match("do\t      g", r"do\sg", true);
+        test_match("do\t      g", r"do\s+g", true);
     }
 }

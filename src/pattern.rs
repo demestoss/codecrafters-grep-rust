@@ -9,6 +9,10 @@ use std::str::{Bytes, FromStr};
 pub enum CharType {
     Digit,
     Alphanumeric,
+    Whitespace,
+    NonDigit,
+    NonAlphanumeric,
+    NonWhitespace,
 }
 
 impl CharType {
@@ -16,6 +20,10 @@ impl CharType {
         match self {
             CharType::Digit => input_ch.is_ascii_digit(),
             CharType::Alphanumeric => input_ch.is_ascii_alphanumeric(),
+            CharType::Whitespace => input_ch.is_ascii_whitespace(),
+            CharType::NonDigit => !input_ch.is_ascii_digit(),
+            CharType::NonAlphanumeric => !input_ch.is_ascii_alphanumeric(),
+            CharType::NonWhitespace => !input_ch.is_ascii_whitespace(),
         }
     }
 }
@@ -29,7 +37,6 @@ pub enum CharToken {
     CharType(CharType),
     StartLine,
     EndLine,
-    Whitespace,
 }
 
 impl CharToken {
@@ -40,7 +47,6 @@ impl CharToken {
             CharToken::Group(group) => group.contains(input_ch),
             CharToken::NegativeGroup(group) => !group.contains(input_ch),
             CharToken::Wildcard => true,
-            CharToken::Whitespace => input_ch.is_ascii_whitespace(),
             _ => false,
         }
     }
@@ -245,14 +251,17 @@ impl FromStr for Pattern {
                 ))?;
                 match next_char {
                     b'd' => inner.push(PatternItem::new(CharToken::CharType(CharType::Digit))),
+                    b'D' => inner.push(PatternItem::new(CharToken::CharType(CharType::NonDigit))),
                     b'w' => inner.push(PatternItem::new(CharToken::CharType(
                         CharType::Alphanumeric,
                     ))),
-                    b's' => {
-                        let mut item = PatternItem::new(CharToken::Whitespace);
-                        item.apply_modifier(TokenModifier::OneOrMore);
-                        inner.push(item);
-                    }
+                    b'W' => inner.push(PatternItem::new(CharToken::CharType(
+                        CharType::NonAlphanumeric,
+                    ))),
+                    b's' => inner.push(PatternItem::new(CharToken::CharType(CharType::Whitespace))),
+                    b'S' => inner.push(PatternItem::new(CharToken::CharType(
+                        CharType::NonWhitespace,
+                    ))),
                     _ => inner.push(PatternItem::new(CharToken::Exact(next_char))),
                 }
             } else if char == b'(' {
