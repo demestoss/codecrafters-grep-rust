@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use std::cmp::PartialEq;
 use std::iter::{Enumerate, Peekable};
 use std::ops::Index;
@@ -72,6 +72,9 @@ impl TextToken {
 enum TokenModifier {
     Optional,
     OneOrMore,
+    Exact(usize),
+    AtLeast(usize),
+    Between(usize, usize),
 }
 
 #[derive(Clone, Debug)]
@@ -120,6 +123,15 @@ impl PatternItem {
         match modifier {
             TokenModifier::Optional => self.optional = true,
             TokenModifier::OneOrMore => self.more_than = Some(1),
+            TokenModifier::Exact(exact) => {
+                self.more_than = Some(exact);
+                self.less_than = Some(exact);
+            }
+            TokenModifier::AtLeast(at_least) => self.more_than = Some(at_least),
+            TokenModifier::Between(more_than, less_than) => {
+                self.more_than = Some(more_than);
+                self.less_than = Some(less_than);
+            }
         }
     }
 
@@ -256,8 +268,33 @@ impl FromStr for Pattern {
                 } else {
                     inner.push(PatternItem::new(CharToken::Group(group)))
                 }
-            } else if char == b'{' { 
-                let mut group = parse_group(&mut pattern, b'}');
+            } else if char == b'{' {
+                let group = parse_group(&mut pattern, b'}')?;
+                let group = String::from_utf8(group).context("parse quantifiers group to UTF-8")?;
+                let modifier = if let Some((more_than, less_than)) = group.split_once(',') {
+                    let at_least = more_than
+                        .parse::<usize>()
+                        .context("quantifiers 'at least' value parse")?;
+                    if less_than.is_empty() {
+                        TokenModifier::AtLeast(at_least)
+                    } else {
+                        let less_than = less_than
+                            .parse::<usize>()
+                            .context("quantifiers 'at least' value parse")?;
+                        TokenModifier::Between(at_least, less_than)
+                    }
+                } else {
+                    let exact = group
+                        .parse::<usize>()
+                        .context("quantifiers exact value parse")?;
+                    TokenModifier::Exact(exact)
+                };
+
+                if let Some(item) = inner.last_mut() {
+                    item.apply_modifier(modifier);
+                } else {
+                    bail!("incorrect quantifiers usage: used without token");
+                }
             } else {
                 inner.push(PatternItem::new(CharToken::Exact(char)))
             }

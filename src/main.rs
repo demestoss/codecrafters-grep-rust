@@ -84,7 +84,7 @@ fn match_more(input: &mut Bytes, pattern_item: &PatternItem, pattern: &Pattern) 
         skip_count += match_count;
         match_times += 1;
 
-        if pattern_item.is_least_matched(match_times + 1) {
+        if pattern_item.is_least_matched(match_times) {
             if let Some(next_pattern_item) = pattern.peek() {
                 if let Some(_) = next_pattern_item.match_input(&mut input.clone()) {
                     break;
@@ -234,25 +234,27 @@ mod test {
         test_match("apple", "(dog|cat)", false);
     }
 
-    // #[test]
-    // fn exact_quantifier_pattern() {
-    //     test_match("dog", "dog{1}", true);
-    //     test_match("dogg", "dog{1}", false);
-    // }
-    //
-    // #[test]
-    // fn between_quantifier_pattern() {
-    //     test_match("dog", "dog{1,3}", true);
-    //     test_match("dogg", "dog{1,3}", true);
-    //     test_match("dogggg", "dog{1,3}", false);
-    // }
+    #[test]
+    fn exact_quantifier_pattern() {
+        test_match("dogs", "dog{1}s", true);
+        test_match("doggs", "dog{2}s", true);
+        test_match("dogggs", "dog{2}s", false);
+        test_match("doggs", "dog{1}s", false);
+    }
 
-    // #[test]
-    // fn at_least_quantifier_pattern() {
-    //     test_match("dog", "dog{2,}", false);
-    //     test_match("dogg", "dog{2,}", true);
-    //     test_match("doggggg", "dog{2,}", true);
-    // }
+    #[test]
+    fn between_quantifier_pattern() {
+        test_match("dog", "dog{1,3}", true);
+        test_match("dogg", "dog{1,3}", true);
+        test_match("doggggs", "dog{1,3}s", false);
+    }
+
+    #[test]
+    fn at_least_quantifier_pattern() {
+        test_match("dog", "dog{2,}", false);
+        test_match("dogg", "dog{2,}", true);
+        test_match("doggggg", "dog{2,}", true);
+    }
 
     #[test]
     fn whitespace_pattern() {
