@@ -1,4 +1,5 @@
-pub mod pattern;
+mod command;
+mod pattern;
 mod pattern_item;
 mod pattern_list;
 mod text_token;
@@ -6,3 +7,4 @@ mod token;
 mod token_modifier;
 
 pub use pattern::Pattern;
+pub use command::Command;
