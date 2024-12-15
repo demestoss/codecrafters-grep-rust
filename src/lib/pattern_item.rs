@@ -74,7 +74,7 @@ impl PatternItem {
 
     pub fn can_match_more(&self, current_times: usize) -> bool {
         if let Some(less_than) = self.less_than {
-            current_times + 1 <= less_than
+            current_times < less_than
         } else {
             true
         }
